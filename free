@@ -1,0 +1,584 @@
+local repo = "https://raw.githubusercontent.com/cloudsense-pub/UELinoriaLib/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+Library.ShowToggleFrameInKeybinds = true 
+Library.ShowCustomCursor = true 
+Library.NotifySide = "Left" 
+
+local Window = Library:CreateWindow({
+    Title = "Drawing Esp",
+    Center = true,
+    AutoShow = true,
+    Resizable = true,
+    ShowCustomCursor = true,
+    UnlockMouseWhileOpen = true,
+    NotifySide = "Left",
+    TabPadding = 8,
+    MenuFadeTime = 0.2
+})
+
+local Tabs = {
+   Movement = Window:AddTab("Movement"),
+   ESP = Window:AddTab("Esp"),         
+   ['UI'] = Window:AddTab("UI-Setting")   
+}
+
+local Options = getgenv().Options
+local Toggles = getgenv().Toggles
+
+task.spawn(function()
+    pcall(function()
+        local MainFrame = Library.Main
+        if MainFrame then
+            local TabContainer = MainFrame:FindFirstChild("TabContainer") or MainFrame:FindFirstChildOfClass("Frame")
+            if TabContainer then
+                local ScrollFrame = Instance.new("ScrollingFrame")
+                ScrollFrame.Name = "ScrollingTabContainer"
+                ScrollFrame.Size = UDim2.new(1, -20, 0, 32)
+                ScrollFrame.Position = UDim2.new(0, 10, 0, 38)
+                ScrollFrame.BackgroundTransparency = 1
+                ScrollFrame.BorderSizePixel = 0
+                ScrollFrame.ScrollBarThickness = 2
+                ScrollFrame.ScrollingDirection = Enum.ScrollingDirection.X
+                ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+                ScrollFrame.ClipsDescendants = true
+                ScrollFrame.Parent = MainFrame
+
+                local Layout = Instance.new("UIListLayout")
+                Layout.FillDirection = Enum.FillDirection.Horizontal
+                Layout.SortOrder = Enum.SortOrder.LayoutOrder
+                Layout.Padding = UDim.new(0, 6)
+                Layout.Parent = ScrollFrame
+
+                for _, child in ipairs(TabContainer:GetChildren()) do
+                    if child:IsA("TextButton") or child:IsA("GuiButton") then
+                        child.Parent = ScrollFrame
+                    end
+                end
+
+                TabContainer:Destroy()
+
+                Layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                    ScrollFrame.CanvasSize = UDim2.new(0, Layout.AbsoluteContentSize.X + 15, 0, 0)
+                end)
+            end
+        end
+    end)
+end)
+
+local RobloxFontsList = {}
+for _, font in ipairs(Enum.Font:GetEnumItems()) do
+    table.insert(RobloxFontsList, font.Name)
+end
+table.sort(RobloxFontsList) 
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local MovementGroup = Tabs.Movement:AddLeftGroupbox("Humanoid Modifiers")
+
+MovementGroup:AddSlider("WalkSpeedSlider", {
+    Text = "Custom WalkSpeed",
+    Default = 16,
+    Min = 16,
+    Max = 150,
+    Rounding = 0,
+    Compact = false
+})
+
+MovementGroup:AddSlider("JumpPowerSlider", {
+    Text = "Custom JumpPower",
+    Default = 50,
+    Min = 50,
+    Max = 300,
+    Rounding = 0,
+    Compact = false
+})
+
+task.spawn(function()
+    while task.wait(0.1) do
+        pcall(function()
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if Options.WalkSpeedSlider and Options.WalkSpeedSlider.Value > 16 then
+                        humanoid.WalkSpeed = Options.WalkSpeedSlider.Value
+                    end
+                    if Options.JumpPowerSlider and Options.JumpPowerSlider.Value > 50 then
+                        humanoid.UseJumpPower = true
+                        humanoid.JumpPower = Options.JumpPowerSlider.Value
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+local Camera = game:GetService("Workspace").CurrentCamera
+local ESP_Storage = {}
+
+local function CreateLine(thickness, color)
+    local line
+    pcall(function()
+        line = Drawing.new("Line")
+        line.Thickness = thickness or 1
+        line.Color = color or Color3.fromRGB(0, 0, 0)
+        line.Transparency = 1
+    end)
+    return line
+end
+
+local function CreateText()
+    local text
+    pcall(function()
+        text = Drawing.new("Text")
+        text.Size = 13
+        text.Center = true
+        text.Outline = true
+        text.OutlineColor = Color3.fromRGB(0, 0, 0)
+        text.Font = 2
+    end)
+    return text
+end
+
+local function CreateSquare()
+    local sq
+    pcall(function()
+        sq = Drawing.new("Square")
+        sq.Thickness = 1
+        sq.Filled = true
+        sq.Transparency = 1
+    end)
+    return sq
+end
+
+local function ImplementESPSetup(holder)
+    pcall(function()
+        holder.BoxLines = {CreateLine(1), CreateLine(1), CreateLine(1), CreateLine(1)}
+        holder.BoxOutlines = {
+            CreateLine(1), CreateLine(1), CreateLine(1), CreateLine(1),
+            CreateLine(1), CreateLine(1), CreateLine(1), CreateLine(1)
+        }
+        
+        holder.BoxGlow = {
+            CreateLine(1.5), CreateLine(1.5), CreateLine(1.5), CreateLine(1.5),
+            CreateLine(2.5), CreateLine(2.5), CreateLine(2.5), CreateLine(2.5),
+            CreateLine(3.5), CreateLine(3.5), CreateLine(3.5), CreateLine(3.5)
+        }
+        
+        holder.HealthOutline = CreateSquare()
+        holder.HealthBar = CreateSquare()
+        holder.HealthGlow = {CreateSquare(), CreateSquare(), CreateSquare()}
+
+        holder.SnapLineOutlines = {CreateLine(1, Color3.fromRGB(0, 0, 0)), CreateLine(1, Color3.fromRGB(0, 0, 0))}
+        holder.SnapLine = CreateLine(1, Color3.fromRGB(255, 255, 255))
+        
+        holder.Name = CreateText()
+        holder.NameGlow = {CreateText(), CreateText(), CreateText()}
+        
+        holder.Distance = CreateText()
+        holder.DistanceGlow = {CreateText(), CreateText(), CreateText()}
+
+        if holder.HealthOutline then holder.HealthOutline.Color = Color3.fromRGB(0, 0, 0) end
+    end)
+end
+
+local function CreateESP(player)
+    if player == LocalPlayer then return end
+    ESP_Storage[player] = {}
+    ImplementESPSetup(ESP_Storage[player])
+end
+
+local function RemoveESP(player)
+    pcall(function()
+        if ESP_Storage[player] then
+            for _, obj in pairs(ESP_Storage[player]) do
+                if type(obj) == "table" then
+                    for _, subObj in pairs(obj) do 
+                        if subObj and subObj.Remove then pcall(function() subObj:Remove() end) end 
+                    end
+                else
+                    if obj and obj.Remove then pcall(function() obj:Remove() end) end
+                end
+            end
+            ESP_Storage[player] = nil
+        end
+    end)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do CreateESP(p) end
+Players.PlayerAdded:Connect(CreateESP)
+Players.PlayerRemoving:Connect(RemoveESP)
+
+local function SetVisibilityFalse(esp)
+    pcall(function()
+        if esp.BoxLines then for i = 1, 4 do if esp.BoxLines[i] then esp.BoxLines[i].Visible = false end end end
+        if esp.BoxOutlines then for i = 1, 8 do if esp.BoxOutlines[i] then esp.BoxOutlines[i].Visible = false end end end
+        if esp.BoxGlow then for i = 1, 12 do if esp.BoxGlow[i] then esp.BoxGlow[i].Visible = false end end end
+        if esp.SnapLine then esp.SnapLine.Visible = false end
+        if esp.SnapLineOutlines then
+            if esp.SnapLineOutlines[1] then esp.SnapLineOutlines[1].Visible = false end
+            if esp.SnapLineOutlines[2] then esp.SnapLineOutlines[2].Visible = false end
+        end
+        if esp.HealthBar then esp.HealthBar.Visible = false end
+        if esp.HealthOutline then esp.HealthOutline.Visible = false end
+        if esp.HealthGlow then for i = 1, 3 do if esp.HealthGlow[i] then esp.HealthGlow[i].Visible = false end end end
+        if esp.Name then esp.Name.Visible = false end
+        if esp.NameGlow then for i = 1, 3 do if esp.NameGlow[i] then esp.NameGlow[i].Visible = false end end end
+        if esp.Distance then esp.Distance.Visible = false end
+        if esp.DistanceGlow then for i = 1, 3 do if esp.DistanceGlow[i] then esp.DistanceGlow[i].Visible = false end end end
+    end)
+end
+
+local function GetCharacterBounds(character)
+    local minX, minY = math.huge, math.huge
+    local maxX, maxY = -math.huge, -math.huge
+    
+    local success, err = pcall(function()
+        for _, part in ipairs(character:GetChildren()) do
+            if part:IsA("BasePart") then
+                local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local size = part.Size
+                    local top, topOn = Camera:WorldToViewportPoint((part.CFrame * CFrame.new(0, size.Y / 2, 0)).Position)
+                    local bottom, bottomOn = Camera:WorldToViewportPoint((part.CFrame * CFrame.new(0, -size.Y / 2, 0)).Position)
+                    local left, leftOn = Camera:WorldToViewportPoint((part.CFrame * CFrame.new(-size.X / 2, 0, 0)).Position)
+                    local right, rightOn = Camera:WorldToViewportPoint((part.CFrame * CFrame.new(size.X / 2, 0, 0)).Position)
+                    
+                    if topOn then minY = math.min(minY, top.Y) maxY = math.max(maxY, top.Y) end
+                    if bottomOn then minY = math.min(minY, bottom.Y) maxY = math.max(maxY, bottom.Y) end
+                    if leftOn then minX = math.min(minX, left.X) maxX = math.max(maxX, left.X) end
+                    if rightOn then minX = math.min(minX, right.X) maxX = math.max(maxX, right.X) end
+                end
+            end
+        end
+    end)
+    
+    if not success then return math.huge, math.huge, -math.huge, -math.huge end
+    return minX, minY, maxX, maxY
+end
+
+game:GetService("RunService").RenderStepped:Connect(function()
+    pcall(function()
+        local espMaster = Toggles.EspMaster and Toggles.EspMaster.Value
+        if not espMaster then
+            for _, esp in pairs(ESP_Storage) do SetVisibilityFalse(esp) end
+            return
+        end
+
+        local boxColor = Options.BoxColor and Options.BoxColor.Value or Color3.fromRGB(255, 255, 255)
+        local boxGlowColor = Options.BoxGlowColor and Options.BoxGlowColor.Value or Color3.fromRGB(255, 255, 255)
+        local healthGlowColor = Options.HealthGlowColor and Options.HealthGlowColor.Value or Color3.fromRGB(0, 255, 0)
+        local nameGlowColor = Options.NameGlowColor and Options.NameGlowColor.Value or Color3.fromRGB(255, 255, 255)
+        local distGlowColor = Options.DistGlowColor and Options.DistGlowColor.Value or Color3.fromRGB(255, 255, 255)
+        local lineColor = Options.LineColor and Options.LineColor.Value or Color3.fromRGB(255, 255, 255)
+        local nameColor = Options.NameColor and Options.NameColor.Value or Color3.fromRGB(255, 255, 255)
+        local distColor = Options.DistColor and Options.DistColor.Value or Color3.fromRGB(255, 255, 255)
+
+        local renderQueue = {}
+
+        for player, esp in pairs(ESP_Storage) do
+            local character = player.Character
+            local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+            if rootPart and humanoid and humanoid.Health > 0 then
+                local rootPos2D, onScreen = Camera:WorldToViewportPoint(rootPart.Position)
+                if onScreen then
+                    local minX, minY, maxX, maxY = GetCharacterBounds(character)
+                    if minX ~= math.huge and minY ~= math.huge and maxX ~= -math.huge and maxY ~= -math.huge then
+                        local boxX = math.round(minX)
+                        local boxY = math.round(minY)
+                        local width = math.round(maxX - minX)
+                        local height = math.round(maxY - minY)
+                        local distanceVal = math.floor((Camera.CFrame.Position - rootPart.Position).Magnitude)
+                        
+                        local rawHealthPct = humanoid.Health / humanoid.MaxHealth
+                        local healthPct = math.clamp(rawHealthPct, 0, 1)
+
+                        table.insert(renderQueue, {
+                            esp = esp,
+                            boxX = boxX,
+                            boxY = boxY,
+                            width = width,
+                            height = height,
+                            healthPct = healthPct,
+                            nameText = player.Name,
+                            distText = "[ " .. tostring(distanceVal) .. "m ]",
+                            rootPos2D = rootPos2D
+                        })
+                        continue
+                    end
+                end
+            end
+            SetVisibilityFalse(esp)
+        end
+
+        for _, data in ipairs(renderQueue) do
+            local esp = data.esp
+            local glow = esp.BoxGlow
+            if Toggles.EspBoxGlow and Toggles.EspBoxGlow.Value then
+                glow[1].From, glow[1].To = Vector2.new(data.boxX - 1, data.boxY - 1), Vector2.new(data.boxX + data.width + 1, data.boxY - 1)
+                glow[2].From, glow[2].To = Vector2.new(data.boxX + data.width + 1, data.boxY - 1), Vector2.new(data.boxX + data.width + 1, data.boxY + data.height + 1)
+                glow[3].From, glow[3].To = Vector2.new(data.boxX + data.width + 1, data.boxY + data.height + 1), Vector2.new(data.boxX - 1, data.boxY + data.height + 1)
+                glow[4].From, glow[4].To = Vector2.new(data.boxX - 1, data.boxY + data.height + 1), Vector2.new(data.boxX - 1, data.boxY - 1)
+                
+                glow[5].From, glow[5].To = Vector2.new(data.boxX - 2, data.boxY - 2), Vector2.new(data.boxX + data.width + 2, data.boxY - 2)
+                glow[6].From, glow[6].To = Vector2.new(data.boxX + data.width + 2, data.boxY - 2), Vector2.new(data.boxX + data.width + 2, data.boxY + data.height + 2)
+                glow[7].From, glow[7].To = Vector2.new(data.boxX + data.width + 2, data.boxY + data.height + 2), Vector2.new(data.boxX - 2, data.boxY + data.height + 2)
+                glow[8].From, glow[8].To = Vector2.new(data.boxX - 2, data.boxY + data.height + 2), Vector2.new(data.boxX - 2, data.boxY - 2)
+                
+                glow[9].From, glow[9].To = Vector2.new(data.boxX - 3, data.boxY - 3), Vector2.new(data.boxX + data.width + 3, data.boxY - 3)
+                glow[10].From, glow[10].To = Vector2.new(data.boxX + data.width + 3, data.boxY - 3), Vector2.new(data.boxX + data.width + 3, data.boxY + data.height + 3)
+                glow[11].From, glow[11].To = Vector2.new(data.boxX + data.width + 3, data.boxY + data.height + 3), Vector2.new(data.boxX - 3, data.boxY + data.height + 3)
+                glow[12].From, glow[12].To = Vector2.new(data.boxX - 3, data.boxY + data.height + 3), Vector2.new(data.boxX - 3, data.boxY - 3)
+
+                for i = 1, 4 do glow[i].Color = boxGlowColor glow[i].Transparency = 0.5 glow[i].Visible = true end
+                for i = 5, 8 do glow[i].Color = boxGlowColor glow[i].Transparency = 0.25 glow[i].Visible = true end
+                for i = 9, 12 do glow[i].Color = boxGlowColor glow[i].Transparency = 0.1 glow[i].Visible = true end
+            else
+                for i = 1, 12 do glow[i].Visible = false end
+            end
+
+            local hGlow = esp.HealthGlow
+            if Toggles.EspHealthGlow and Toggles.EspHealthGlow.Value and Toggles.EspHealth and Toggles.EspHealth.Value then
+                local hHeight = math.round(data.height * data.healthPct)
+                local hY = data.boxY + data.height - hHeight
+                
+                hGlow[1].Size = Vector2.new(4, hHeight + 2)
+                hGlow[1].Position = Vector2.new(data.boxX - 7, hY - 1)
+                hGlow[1].Transparency = 0.4
+                
+                hGlow[2].Size = Vector2.new(6, hHeight + 4)
+                hGlow[2].Position = Vector2.new(data.boxX - 8, hY - 2)
+                hGlow[2].Transparency = 0.2
+                
+                hGlow[3].Size = Vector2.new(8, hHeight + 6)
+                hGlow[3].Position = Vector2.new(data.boxX - 9, hY - 3)
+                hGlow[3].Transparency = 0.08
+
+                for i = 1, 3 do hGlow[i].Color = healthGlowColor hGlow[i].Visible = true end
+            else
+                for i = 1, 3 do hGlow[i].Visible = false end
+            end
+
+            local nGlow = esp.NameGlow
+            if Toggles.EspNameGlow and Toggles.EspNameGlow.Value and Toggles.EspName and Toggles.EspName.Value then
+                local nPos = Vector2.new(data.boxX + (data.width / 2), data.boxY - 15)
+                nGlow[1].Text = data.nameText nGlow[1].Position = nPos + Vector2.new(1, 0) nGlow[1].Transparency = 0.5
+                nGlow[2].Text = data.nameText nGlow[2].Position = nPos + Vector2.new(-1, 0) nGlow[2].Transparency = 0.3
+                nGlow[3].Text = data.nameText nGlow[3].Position = nPos + Vector2.new(0, 1) nGlow[3].Transparency = 0.15
+                for i = 1, 3 do nGlow[i].Color = nameGlowColor nGlow[i].Center = true nGlow[i].Outline = false nGlow[i].Visible = true end
+            else
+                for i = 1, 3 do nGlow[i].Visible = false end
+            end
+
+            local dGlow = esp.DistanceGlow
+            if Toggles.EspDistanceGlow and Toggles.EspDistanceGlow.Value and Toggles.EspDistance and Toggles.EspDistance.Value then
+                local dPos = Vector2.new(data.boxX + (data.width / 2), data.boxY + data.height + 4)
+                dGlow[1].Text = data.distText dGlow[1].Position = dPos + Vector2.new(1, 0) dGlow[1].Transparency = 0.5
+                dGlow[2].Text = data.distText dGlow[2].Position = dPos + Vector2.new(-1, 0) dGlow[2].Transparency = 0.3
+                dGlow[3].Text = data.distText dGlow[3].Position = dPos + Vector2.new(0, 1) dGlow[3].Transparency = 0.15
+                for i = 1, 3 do dGlow[i].Color = distGlowColor dGlow[i].Center = true dGlow[i].Outline = false dGlow[i].Visible = true end
+            else
+                for i = 1, 3 do dGlow[i].Visible = false end
+            end
+        end
+
+        for _, data in ipairs(renderQueue) do
+            local esp = data.esp
+            local outs = esp.BoxOutlines
+            outs[1].From, outs[1].To = Vector2.new(data.boxX - 1, data.boxY - 1), Vector2.new(data.boxX + data.width + 1, data.boxY - 1)
+            outs[2].From, outs[2].To = Vector2.new(data.boxX + data.width + 1, data.boxY - 1), Vector2.new(data.boxX + data.width + 1, data.boxY + data.height + 1)
+            outs[3].From, outs[3].To = Vector2.new(data.boxX + data.width + 1, data.boxY + data.height + 1), Vector2.new(data.boxX - 1, data.boxY + data.height + 1)
+            outs[4].From, outs[4].To = Vector2.new(data.boxX - 1, data.boxY + data.height + 1), Vector2.new(data.boxX - 1, data.boxY - 1)
+            outs[5].From, outs[5].To = Vector2.new(data.boxX + 1, data.boxY + 1), Vector2.new(data.boxX + data.width - 1, data.boxY + 1)
+            outs[6].From, outs[6].To = Vector2.new(data.boxX + data.width - 1, data.boxY + 1), Vector2.new(data.boxX + data.width - 1, data.boxY + data.height - 1)
+            outs[7].From, outs[7].To = Vector2.new(data.boxX + data.width - 1, data.boxY + data.height - 1), Vector2.new(data.boxX + 1, data.boxY + data.height - 1)
+            outs[8].From, outs[8].To = Vector2.new(data.boxX + 1, data.boxY + 1), Vector2.new(data.boxX + 1, data.boxY + data.height - 1)
+
+            if Toggles.EspBox and Toggles.EspBox.Value then
+                for i = 1, 8 do outs[i].Visible = true end
+            else
+                for i = 1, 8 do outs[i].Visible = false end
+            end
+
+            if Toggles.EspLines and Toggles.EspLines.Value then
+                local startVector = Vector2.new(Camera.ViewportSize.X / 2, 0)
+                local endVector = Vector2.new(data.rootPos2D.X, data.boxY)
+                local dir = (endVector - startVector).Unit
+                local perp = Vector2.new(-dir.Y, dir.X) * 1.5
+
+                esp.SnapLineOutlines[1].From = startVector - perp
+                esp.SnapLineOutlines[1].To = endVector - perp
+                esp.SnapLineOutlines[1].Color = Color3.fromRGB(0, 0, 0)
+                esp.SnapLineOutlines[1].Visible = true
+
+                esp.SnapLineOutlines[2].From = startVector + perp
+                esp.SnapLineOutlines[2].To = endVector + perp
+                esp.SnapLineOutlines[2].Color = Color3.fromRGB(0, 0, 0)
+                esp.SnapLineOutlines[2].Visible = true
+            else
+                esp.SnapLineOutlines[1].Visible = false
+                esp.SnapLineOutlines[2].Visible = false
+            end
+        end
+
+        for _, data in ipairs(renderQueue) do
+            local esp = data.esp
+            local lines = esp.BoxLines
+            
+            lines[1].From, lines[1].To = Vector2.new(data.boxX, data.boxY), Vector2.new(data.boxX + data.width, data.boxY)
+            lines[2].From, lines[2].To = Vector2.new(data.boxX + data.width, data.boxY), Vector2.new(data.boxX + data.width, data.boxY + data.height)
+            lines[3].From, lines[3].To = Vector2.new(data.boxX + data.width, data.boxY + data.height), Vector2.new(data.boxX, data.boxY + data.height)
+            lines[4].From, lines[4].To = Vector2.new(data.boxX, data.boxY + data.height), Vector2.new(data.boxX, data.boxY)
+
+            if Toggles.EspBox and Toggles.EspBox.Value then
+                for i = 1, 4 do lines[i].Color = boxColor lines[i].Visible = true end
+            else
+                for i = 1, 4 do lines[i].Visible = false end
+            end
+
+            if Toggles.EspLines and Toggles.EspLines.Value then
+                esp.SnapLine.From = Vector2.new(Camera.ViewportSize.X / 2, 0)
+                esp.SnapLine.To = Vector2.new(data.rootPos2D.X, data.boxY)
+                esp.SnapLine.Color = lineColor
+                esp.SnapLine.Visible = true
+            else
+                esp.SnapLine.Visible = false
+            end
+
+            if Toggles.EspHealth and Toggles.EspHealth.Value then
+                local healthHeight = math.round(data.height * data.healthPct)
+                local barY = data.boxY + data.height - healthHeight
+                
+                esp.HealthOutline.Size = Vector2.new(4, data.height + 2)
+                esp.HealthOutline.Position = Vector2.new(data.boxX - 7, data.boxY - 1)
+                esp.HealthOutline.Visible = true
+                
+                esp.HealthBar.Size = Vector2.new(2, healthHeight)
+                esp.HealthBar.Position = Vector2.new(data.boxX - 6, barY)
+                esp.HealthBar.Color = Color3.fromRGB(255, 0, 0):Lerp(Color3.fromRGB(0, 255, 0), data.healthPct)
+                esp.HealthBar.Visible = true
+            else
+                esp.HealthOutline.Visible = false
+                esp.HealthBar.Visible = false
+            end
+
+            if Toggles.EspName and Toggles.EspName.Value then
+                esp.Name.Text = data.nameText
+                esp.Name.Position = Vector2.new(data.boxX + (data.width / 2), data.boxY - 15)
+                esp.Name.Color = nameColor
+                esp.Name.Visible = true
+            else
+                esp.Name.Visible = false
+            end
+
+            if Toggles.EspDistance and Toggles.EspDistance.Value then
+                esp.Distance.Text = data.distText
+                esp.Distance.Position = Vector2.new(data.boxX + (data.width / 2), data.boxY + data.height + 4)
+                esp.Distance.Color = distColor
+                esp.Distance.Visible = true
+            else
+                esp.Distance.Visible = false
+            end
+        end
+    end)
+end)
+
+local EspGroup = Tabs.ESP:AddLeftGroupbox("ESP Toggle")
+local EspVisualsGroup = Tabs.ESP:AddRightGroupbox("Visual Settings")
+
+EspGroup:AddToggle("EspMaster", { Text = "Enable Drawing Esp", Default = false })
+
+EspVisualsGroup:AddToggle("EspBox", { Text = "Draw Box", Default = false }):AddColorPicker("BoxColor", { Default = Color3.fromRGB(255, 255, 255) })
+EspVisualsGroup:AddToggle("EspBoxGlow", { Text = "Box Glow", Default = false }):AddColorPicker("BoxGlowColor", { Default = Color3.fromRGB(255, 255, 255) })
+
+EspVisualsGroup:AddToggle("EspLines", { Text = "Draw Lines", Default = false }):AddColorPicker("LineColor", { Default = Color3.fromRGB(255, 255, 255) })
+
+EspVisualsGroup:AddToggle("EspHealth", { Text = "Draw Health Bar", Default = false })
+EspVisualsGroup:AddToggle("EspHealthGlow", { Text = "Health Bar Glow", Default = false }):AddColorPicker("HealthGlowColor", { Default = Color3.fromRGB(0, 255, 0) })
+
+EspVisualsGroup:AddToggle("EspName", { Text = "Draw Name", Default = false }):AddColorPicker("NameColor", { Default = Color3.fromRGB(255, 255, 255) })
+EspVisualsGroup:AddToggle("EspNameGlow", { Text = "Name Glow", Default = false }):AddColorPicker("NameGlowColor", { Default = Color3.fromRGB(255, 255, 255) })
+
+EspVisualsGroup:AddToggle("EspDistance", { Text = "Draw Distance", Default = false }):AddColorPicker("DistColor", { Default = Color3.fromRGB(255, 255, 255) })
+EspVisualsGroup:AddToggle("EspDistanceGlow", { Text = "Distance Glow", Default = false }):AddColorPicker("DistGlowColor", { Default = Color3.fromRGB(255, 255, 255) })
+
+local InterfaceGroup = Tabs['UI']:AddLeftGroupbox("Menu Customization")
+local MenuGroup = Tabs['UI']:AddLeftGroupbox("Menu Settings")
+
+InterfaceGroup:AddDropdown("UIFontDropdown", { 
+    Text = "UI Custom Font", 
+    Values = RobloxFontsList, 
+    Default = table.find(RobloxFontsList, "Cartoon") or 1, 
+    Multi = false 
+})
+
+Options.UIFontDropdown:OnChanged(function()
+    pcall(function()
+        local targetFont = Enum.Font[Options.UIFontDropdown.Value]
+        if not targetFont then return end
+        
+        if Library.ScreenGui then
+            for _, desc in ipairs(Library.ScreenGui:GetDescendants()) do
+                if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
+                    desc.Font = targetFont
+                end
+            end
+        else
+            if Library.Main then
+                for _, desc in ipairs(Library.Main:GetDescendants()) do
+                    if desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox") then
+                        desc.Font = targetFont
+                    end
+                end
+            end
+            if Library.KeybindFrame then
+                for _, desc in ipairs(Library.KeybindFrame:GetDescendants()) do
+                    if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                        desc.Font = targetFont
+                    end
+                end
+            end
+        end
+    end)
+end)
+
+MenuGroup:AddToggle("KeybindMenuOpen", { Default = false, Text = "Open Keybind Menu", Callback = function(value) Library.KeybindFrame.Visible = value end})
+MenuGroup:AddToggle("ShowCustomCursor", {Text = "Custom Cursor", Default = true, Callback = function(Value) Library.ShowCustomCursor = Value end})
+MenuGroup:AddDivider()
+MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
+MenuGroup:AddButton("Unload", function() Library:Unload() end) 
+Library.ToggleKeybind = Options.MenuKeybind
+
+Library:OnUnload(function()
+    Library.Unloaded = true
+    
+    pcall(function()
+        for player, esp in pairs(ESP_Storage) do
+            for _, obj in pairs(esp) do
+                if type(obj) == "table" then
+                    for _, subObj in pairs(obj) do if subObj and subObj.Remove then pcall(function() subObj:Remove() end) end end
+                else
+                    if obj and obj.Remove then pcall(function() obj:Remove() end) end
+                end
+            end
+        end
+    end)
+end)
+
+ThemeManager:SetLibrary(Library) 
+SaveManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings() 
+SaveManager:SetIgnoreIndexes({ "MenuKeybind", "UIFontDropdown" })
+
+ThemeManager:SetFolder("SilentHubV3") 
+SaveManager:SetFolder("SilentHubV3/configs")
+
+SaveManager:BuildConfigSection(Tabs['UI']) 
+ThemeManager:ApplyToTab(Tabs['UI']) 
+SaveManager:LoadAutoloadConfig()
